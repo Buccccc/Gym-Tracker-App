@@ -1,0 +1,24 @@
+{
+    "name": "Gym Tracker",
+    "short_name": "GymTracker",
+    "description": "Progressive overload strength tracker",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#0f0f1b",
+    "theme_color": "#00b4d8",
+    "orientation": "portrait",
+    "icons": [
+        {
+            "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%230f0f1b'/%3E%3Crect x='20' y='67' width='152' height='58' rx='8' fill='%2300b4d8'/%3E%3Crect x='38' y='38' width='29' height='116' rx='6' fill='%2300b4d8'/%3E%3Crect x='125' y='38' width='29' height='116' rx='6' fill='%2300b4d8'/%3E%3Crect x='10' y='58' width='22' height='76' rx='6' fill='%2300b4d8'/%3E%3Crect x='160' y='58' width='22' height='76' rx='6' fill='%2300b4d8'/%3E%3C/svg%3E",
+            "sizes": "192x192",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%230f0f1b'/%3E%3Crect x='53' y='179' width='406' height='154' rx='20' fill='%2300b4d8'/%3E%3Crect x='102' y='102' width='77' height='308' rx='16' fill='%2300b4d8'/%3E%3Crect x='333' y='102' width='77' height='308' rx='16' fill='%2300b4d8'/%3E%3Crect x='26' y='154' width='58' height='204' rx='16' fill='%2300b4d8'/%3E%3Crect x='428' y='154' width='58' height='204' rx='16' fill='%2300b4d8'/%3E%3C/svg%3E",
+            "sizes": "512x512",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        }
+    ]
+}
