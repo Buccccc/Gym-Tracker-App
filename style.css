@@ -1087,3 +1087,17 @@ input[type="date"] { color-scheme: dark; }
 #pull-indicator.refreshing .pull-text {
     color: var(--primary);
 }
+
+/* ========== Version Badge ========== */
+#version-badge {
+    position: fixed;
+    bottom: calc(var(--nav-height) + 4px);
+    right: 8px;
+    font-size: 0.55rem;
+    color: var(--text-muted);
+    opacity: 0.4;
+    z-index: 999;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    pointer-events: none;
+}
