@@ -1476,3 +1476,113 @@ document.addEventListener('click', (e) => {
         e.target.style.display = 'none';
     }
 });
+
+// ============================================================
+// Pull-to-Refresh
+// ============================================================
+(function initPullToRefresh() {
+    let touchStartY = 0;
+    let touchCurrentY = 0;
+    let isPulling = false;
+    const threshold = 80;
+
+    // Create pull indicator element
+    const indicator = document.createElement('div');
+    indicator.id = 'pull-indicator';
+    indicator.innerHTML = `
+        <div class="pull-indicator-content">
+            <svg class="pull-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"/>
+            </svg>
+            <span class="pull-text">Pull to refresh</span>
+        </div>
+    `;
+    document.body.prepend(indicator);
+
+    document.addEventListener('touchstart', (e) => {
+        if (window.scrollY === 0) {
+            touchStartY = e.touches[0].clientY;
+            isPulling = true;
+        }
+    }, { passive: true });
+
+    document.addEventListener('touchmove', (e) => {
+        if (!isPulling) return;
+        touchCurrentY = e.touches[0].clientY;
+        const pullDistance = touchCurrentY - touchStartY;
+
+        if (pullDistance > 0 && window.scrollY === 0) {
+            const progress = Math.min(pullDistance / threshold, 1);
+            const translateY = Math.min(pullDistance * 0.4, 60);
+
+            indicator.style.transform = `translateY(${translateY}px)`;
+            indicator.style.opacity = progress;
+            indicator.classList.add('visible');
+
+            const arrow = indicator.querySelector('.pull-arrow');
+            const text = indicator.querySelector('.pull-text');
+
+            if (progress >= 1) {
+                arrow.style.transform = 'rotate(180deg)';
+                text.textContent = 'Release to refresh';
+                indicator.classList.add('ready');
+            } else {
+                arrow.style.transform = `rotate(${progress * 180}deg)`;
+                text.textContent = 'Pull to refresh';
+                indicator.classList.remove('ready');
+            }
+        }
+    }, { passive: true });
+
+    document.addEventListener('touchend', () => {
+        if (!isPulling) return;
+        const pullDistance = touchCurrentY - touchStartY;
+
+        if (pullDistance >= threshold && window.scrollY === 0) {
+            // Trigger refresh
+            indicator.classList.add('refreshing');
+            indicator.querySelector('.pull-text').textContent = 'Refreshing...';
+            indicator.style.transform = 'translateY(50px)';
+
+            refreshAllData().finally(() => {
+                resetIndicator();
+            });
+        } else {
+            resetIndicator();
+        }
+
+        isPulling = false;
+        touchStartY = 0;
+        touchCurrentY = 0;
+    });
+
+    function resetIndicator() {
+        indicator.style.transform = 'translateY(0)';
+        indicator.style.opacity = '0';
+        indicator.classList.remove('visible', 'ready', 'refreshing');
+    }
+})();
+
+async function refreshAllData() {
+    try {
+        const [exercisesRes, setsRes, sessionsRes, locationsRes] = await Promise.all([
+            api('getExercises'),
+            api('getSets'),
+            api('getSessions'),
+            api('getLocations')
+        ]);
+
+        cachedExercises = exercisesRes.data || [];
+        cachedSets = setsRes.data || [];
+        cachedSessions = sessionsRes.data || [];
+        cachedLocations = locationsRes.data || [];
+
+        showToast('Data synced');
+
+        // Re-render current view
+        if (currentView === 'settings') initSettingsView();
+        else if (currentView === 'analysis') initAnalysisView();
+    } catch (err) {
+        showToast('Sync failed: ' + err.message, 'error');
+    }
+}

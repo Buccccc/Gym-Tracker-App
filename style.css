@@ -1030,3 +1030,60 @@ input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 input[type="number"] { -moz-appearance: textfield; }
 input[type="date"] { color-scheme: dark; }
+
+/* ========== Pull to Refresh ========== */
+#pull-indicator {
+    position: fixed;
+    top: -60px;
+    left: 0;
+    right: 0;
+    z-index: 9998;
+    display: flex;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+#pull-indicator.visible {
+    opacity: 1;
+}
+
+.pull-indicator-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.pull-arrow {
+    color: var(--text-secondary);
+    transition: transform 0.2s ease;
+}
+
+.pull-text {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+#pull-indicator.ready .pull-arrow {
+    color: var(--primary);
+}
+
+#pull-indicator.ready .pull-text {
+    color: var(--primary);
+}
+
+#pull-indicator.refreshing .pull-arrow {
+    animation: spin 0.7s linear infinite;
+    color: var(--primary);
+}
+
+#pull-indicator.refreshing .pull-text {
+    color: var(--primary);
+}
