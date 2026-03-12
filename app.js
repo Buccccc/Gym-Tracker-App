@@ -31,14 +31,15 @@ let avgLocationFilter = '';
 // ===== Date Formatting =====
 function formatDate(dateStr) {
     if (!dateStr) return '';
-    // Handle various date formats - extract just the date part
-    const cleanDate = String(dateStr).split('T')[0].split(' ')[0];
-    const parts = cleanDate.split('-');
-    if (parts.length !== 3) return cleanDate;
-    const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-    if (isNaN(d.getTime())) return cleanDate;
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+    const clean = dateKey(dateStr);
+    const parts = clean.split('-');
+    if (parts.length !== 3) return clean;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = parseInt(parts[2], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const year = parseInt(parts[0], 10);
+    return `${day} ${months[month]} ${year}`;
 }
 
 function dateKey(dateStr) {
