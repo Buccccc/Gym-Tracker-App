@@ -23,6 +23,28 @@ let cachedLocations = [];
 let currentView = 'log';
 let logSetState = { step: 0, focus: '', muscleGroup: '', exercise: '' };
 let analysisChart = null;
+let calendarMonth = new Date().getMonth();
+let calendarYear = new Date().getFullYear();
+let avgFocusFilter = '';
+let avgLocationFilter = '';
+
+// ===== Date Formatting =====
+function formatDate(dateStr) {
+    if (!dateStr) return '';
+    // Handle various date formats - extract just the date part
+    const cleanDate = String(dateStr).split('T')[0].split(' ')[0];
+    const parts = cleanDate.split('-');
+    if (parts.length !== 3) return cleanDate;
+    const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    if (isNaN(d.getTime())) return cleanDate;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function dateKey(dateStr) {
+    if (!dateStr) return '';
+    return String(dateStr).split('T')[0].split(' ')[0];
+}
 
 // ===== API Helper =====
 async function api(action, params = {}) {
@@ -42,6 +64,32 @@ async function api(action, params = {}) {
     return result;
 }
 
+// Fire-and-forget API call (no waiting)
+function apiFireAndForget(action, params = {}) {
+    api(action, params).catch(err => {
+        console.error('Background API error:', err.message);
+        showToast('Sync error — check connection', 'error');
+    });
+}
+
+// Quiet refresh of a cache in background
+function refreshCacheQuietly(cacheName) {
+    const actionMap = {
+        sets: 'getSets',
+        sessions: 'getSessions',
+        exercises: 'getExercises',
+        locations: 'getLocations'
+    };
+    const action = actionMap[cacheName];
+    if (!action) return;
+    api(action).then(res => {
+        if (cacheName === 'sets') cachedSets = res.data || [];
+        if (cacheName === 'sessions') cachedSessions = res.data || [];
+        if (cacheName === 'exercises') cachedExercises = res.data || [];
+        if (cacheName === 'locations') cachedLocations = res.data || [];
+    }).catch(() => {});
+}
+
 // ===== Toast System =====
 function showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
@@ -52,7 +100,7 @@ function showToast(message, type = 'success') {
     setTimeout(() => {
         toast.classList.add('toast-out');
         setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, 2500);
 }
 
 // ===== Loading Helpers =====
@@ -108,9 +156,7 @@ function showSetupModal() {
             errorEl.style.display = 'block';
             return;
         }
-        try {
-            new URL(url);
-        } catch {
+        try { new URL(url); } catch {
             errorEl.textContent = 'Please enter a valid URL';
             errorEl.style.display = 'block';
             return;
@@ -261,7 +307,7 @@ function renderSetStep3() {
         container.innerHTML = `
             <div class="empty-state">
                 <p>No exercises found for ${logSetState.muscleGroup}.</p>
-                <button class="link-btn" onclick="switchView('settings')">Add some in Settings →</button>
+                <button class="link-btn" onclick="switchView('settings')">Add some in Settings</button>
             </div>
         `;
         return;
@@ -281,7 +327,6 @@ function renderSetStep3() {
 function renderSetStep4() {
     document.getElementById('set-exercise-title').textContent = logSetState.exercise;
 
-    // Record calculation
     const recordContent = document.getElementById('set-record-content');
     const exerciseSets = cachedSets.filter(s => s.exercise === logSetState.exercise);
 
@@ -292,16 +337,15 @@ function renderSetStep4() {
         const setsAtMax = exerciseSets.filter(s => parseFloat(s.weight) === maxWeight);
         const maxReps = Math.max(...setsAtMax.map(s => parseInt(s.reps)));
         const bestSets = setsAtMax.filter(s => parseInt(s.reps) === maxReps);
-        const recordSet = bestSets.sort((a, b) => b.date.localeCompare(a.date))[0];
+        const recordSet = bestSets.sort((a, b) => dateKey(b.date).localeCompare(dateKey(a.date)))[0];
 
         recordContent.innerHTML = `
             <p class="record-detail">Weight: <span>${maxWeight} kg</span></p>
             <p class="record-detail">Reps at ${maxWeight} kg: <span>${maxReps}</span></p>
-            <p class="record-date">Set on: ${recordSet.date}</p>
+            <p class="record-date">Set on: ${formatDate(recordSet.date)}</p>
         `;
     }
 
-    // Reset inputs
     document.getElementById('set-weight').value = '';
     document.getElementById('set-reps').value = '';
     document.getElementById('set-weight-error').textContent = '';
@@ -309,33 +353,30 @@ function renderSetStep4() {
     document.getElementById('set-weight').classList.remove('invalid');
     document.getElementById('set-reps').classList.remove('invalid');
 
-    // Date
     document.getElementById('set-date').value = todayStr();
     document.getElementById('set-date-body').style.display = 'none';
     const toggle = document.getElementById('set-date-toggle');
-    toggle.querySelector('span').textContent = '▸ Override date';
+    toggle.querySelector('span').textContent = '› Override date';
     toggle.onclick = () => {
         const body = document.getElementById('set-date-body');
         if (body.style.display === 'none') {
             body.style.display = 'block';
-            toggle.querySelector('span').textContent = '▾ Override date';
+            toggle.querySelector('span').textContent = '‹ Override date';
         } else {
             body.style.display = 'none';
-            toggle.querySelector('span').textContent = '▸ Override date';
+            toggle.querySelector('span').textContent = '› Override date';
         }
     };
 
-    // Save handler
     const saveBtn = document.getElementById('save-set-btn');
     saveBtn.onclick = () => saveSet();
 }
 
-async function saveSet() {
+function saveSet() {
     const weightInput = document.getElementById('set-weight');
     const repsInput = document.getElementById('set-reps');
     const weightError = document.getElementById('set-weight-error');
     const repsError = document.getElementById('set-reps-error');
-    const saveBtn = document.getElementById('save-set-btn');
 
     let valid = true;
 
@@ -363,28 +404,32 @@ async function saveSet() {
 
     const date = document.getElementById('set-date').value || todayStr();
 
-    setButtonLoading(saveBtn, true);
+    // Optimistic update: add to local cache immediately
+    cachedSets.push({
+        date,
+        focus: logSetState.focus,
+        muscleGroup: logSetState.muscleGroup,
+        exercise: logSetState.exercise,
+        weight,
+        reps,
+        row: 'pending_' + Date.now()
+    });
 
-    try {
-        await api('addSet', {
-            date,
-            focus: logSetState.focus,
-            muscleGroup: logSetState.muscleGroup,
-            exercise: logSetState.exercise,
-            weight,
-            reps
-        });
+    showToast('Set logged!');
+    showLogHome();
 
-        const setsRes = await api('getSets');
-        cachedSets = setsRes.data || [];
+    // Fire API in background, then quietly refresh cache
+    apiFireAndForget('addSet', {
+        date,
+        focus: logSetState.focus,
+        muscleGroup: logSetState.muscleGroup,
+        exercise: logSetState.exercise,
+        weight,
+        reps
+    });
 
-        showToast('Set logged! 💪');
-        showLogHome();
-    } catch (err) {
-        showToast('Error: ' + err.message, 'error');
-    } finally {
-        setButtonLoading(saveBtn, false);
-    }
+    // Refresh after a delay to get real row IDs
+    setTimeout(() => refreshCacheQuietly('sets'), 3000);
 }
 
 // ----- Log Session Flow -----
@@ -392,23 +437,21 @@ function startLogSession() {
     document.getElementById('log-home').style.display = 'none';
     document.getElementById('log-session-flow').style.display = 'block';
 
-    // Date
     document.getElementById('session-date').value = todayStr();
     document.getElementById('session-date-body').style.display = 'none';
     const toggle = document.getElementById('session-date-toggle');
-    toggle.querySelector('span').textContent = '▸ Override date';
+    toggle.querySelector('span').textContent = '› Override date';
     toggle.onclick = () => {
         const body = document.getElementById('session-date-body');
         if (body.style.display === 'none') {
             body.style.display = 'block';
-            toggle.querySelector('span').textContent = '▾ Override date';
+            toggle.querySelector('span').textContent = '‹ Override date';
         } else {
             body.style.display = 'none';
-            toggle.querySelector('span').textContent = '▸ Override date';
+            toggle.querySelector('span').textContent = '› Override date';
         }
     };
 
-    // Focus
     const focusContainer = document.getElementById('session-focus-group');
     focusContainer.innerHTML = '';
     let sessionFocus = '';
@@ -422,13 +465,9 @@ function startLogSession() {
         focusContainer.appendChild(btn);
     });
 
-    // Muscle groups container hidden initially
     document.getElementById('session-mg-container').style.display = 'none';
-
-    // Duration
     document.getElementById('session-duration').value = '';
 
-    // Location
     const locationContainer = document.getElementById('session-location-group');
     locationContainer.innerHTML = '';
     let sessionLocation = '';
@@ -436,7 +475,7 @@ function startLogSession() {
         locationContainer.innerHTML = `
             <div class="empty-state" style="padding:12px 0;">
                 <p style="font-size:0.85rem;">No locations configured.</p>
-                <button class="link-btn" onclick="switchView('settings')">Add in Settings →</button>
+                <button class="link-btn" onclick="switchView('settings')">Add in Settings</button>
             </div>
         `;
     } else {
@@ -450,7 +489,6 @@ function startLogSession() {
         });
     }
 
-    // People
     const peopleContainer = document.getElementById('session-people-group');
     peopleContainer.innerHTML = '';
     let sessionPeople = '';
@@ -463,7 +501,6 @@ function startLogSession() {
         peopleContainer.appendChild(btn);
     });
 
-    // Effort
     const effortContainer = document.getElementById('session-effort-group');
     effortContainer.innerHTML = '';
     let sessionEffort = '';
@@ -476,14 +513,11 @@ function startLogSession() {
         effortContainer.appendChild(btn);
     });
 
-    // Clear errors
     clearSessionErrors();
 
-    // Back button
     document.getElementById('log-session-back').onclick = () => showLogHome();
 
-    // Save
-    document.getElementById('save-session-btn').onclick = async () => {
+    document.getElementById('save-session-btn').onclick = () => {
         clearSessionErrors();
         let valid = true;
 
@@ -526,30 +560,34 @@ function startLogSession() {
         if (!valid) return;
 
         const date = document.getElementById('session-date').value || todayStr();
-        const saveBtn = document.getElementById('save-session-btn');
-        setButtonLoading(saveBtn, true);
+        const muscleGroupsStr = checkedMgs.join(',');
 
-        try {
-            await api('addSession', {
-                date,
-                focus: sessionFocus,
-                muscleGroups: checkedMgs.join(','),
-                duration,
-                location: sessionLocation,
-                people: sessionPeople,
-                effort: sessionEffort
-            });
+        // Optimistic update
+        cachedSessions.push({
+            date,
+            focus: sessionFocus,
+            muscleGroups: muscleGroupsStr,
+            duration,
+            location: sessionLocation,
+            people: sessionPeople,
+            effort: sessionEffort,
+            row: 'pending_' + Date.now()
+        });
 
-            const sessionsRes = await api('getSessions');
-            cachedSessions = sessionsRes.data || [];
+        showToast('Session logged!');
+        showLogHome();
 
-            showToast('Session logged! 🏋️');
-            showLogHome();
-        } catch (err) {
-            showToast('Error: ' + err.message, 'error');
-        } finally {
-            setButtonLoading(saveBtn, false);
-        }
+        apiFireAndForget('addSession', {
+            date,
+            focus: sessionFocus,
+            muscleGroups: muscleGroupsStr,
+            duration,
+            location: sessionLocation,
+            people: sessionPeople,
+            effort: sessionEffort
+        });
+
+        setTimeout(() => refreshCacheQuietly('sessions'), 3000);
     };
 }
 
@@ -597,7 +635,6 @@ function setupAccordions() {
             const body = document.getElementById(targetId);
             const isOpen = body.classList.contains('open');
 
-            // Close all
             document.querySelectorAll('.accordion-body').forEach(b => b.classList.remove('open'));
             document.querySelectorAll('.accordion-header').forEach(h => h.classList.remove('open'));
 
@@ -625,16 +662,8 @@ function setupApiConfig() {
 
     document.getElementById('save-new-api-btn').onclick = () => {
         const newUrl = document.getElementById('new-api-url').value.trim();
-        if (!newUrl) {
-            showToast('Please enter a URL', 'error');
-            return;
-        }
-        try {
-            new URL(newUrl);
-        } catch {
-            showToast('Invalid URL format', 'error');
-            return;
-        }
+        if (!newUrl) { showToast('Please enter a URL', 'error'); return; }
+        try { new URL(newUrl); } catch { showToast('Invalid URL format', 'error'); return; }
         localStorage.setItem('gymtracker_api_url', newUrl);
         urlDisplay.textContent = newUrl.substring(0, 50) + '...';
         document.getElementById('change-api-form').style.display = 'none';
@@ -643,7 +672,6 @@ function setupApiConfig() {
 }
 
 function setupManageExercises() {
-    // Populate muscle group dropdown
     const mgSelect = document.getElementById('add-exercise-mg');
     mgSelect.innerHTML = '<option value="">Select muscle group...</option>';
     ALL_MUSCLE_GROUPS.forEach(mg => {
@@ -653,7 +681,6 @@ function setupManageExercises() {
         mgSelect.appendChild(opt);
     });
 
-    // Search/filter as user types
     const nameInput = document.getElementById('add-exercise-name');
     const searchResults = document.getElementById('exercise-search-results');
 
@@ -661,13 +688,10 @@ function setupManageExercises() {
         const mg = mgSelect.value;
         const query = nameInput.value.trim().toLowerCase();
         searchResults.innerHTML = '';
-
         if (!mg || !query) return;
-
         const matches = cachedExercises.filter(e =>
             e.muscleGroup === mg && e.name.toLowerCase().includes(query)
         );
-
         if (matches.length > 0) {
             searchResults.innerHTML = '<p class="search-label">Existing exercises:</p>';
             matches.forEach(m => {
@@ -683,35 +707,22 @@ function setupManageExercises() {
         nameInput.dispatchEvent(new Event('input'));
     });
 
-    // Add exercise button
     const addBtn = document.getElementById('add-exercise-btn');
     addBtn.onclick = async () => {
         const mg = mgSelect.value;
         const name = nameInput.value.trim();
+        if (!mg) { showToast('Select a muscle group', 'error'); return; }
+        if (!name) { showToast('Enter an exercise name', 'error'); return; }
 
-        if (!mg) {
-            showToast('Select a muscle group', 'error');
-            return;
-        }
-        if (!name) {
-            showToast('Enter an exercise name', 'error');
-            return;
-        }
+        // Optimistic
+        cachedExercises.push({ muscleGroup: mg, name });
+        nameInput.value = '';
+        searchResults.innerHTML = '';
+        renderExistingExercises();
+        showToast('Exercise added!');
 
-        setButtonLoading(addBtn, true);
-        try {
-            await api('addExercise', { muscleGroup: mg, name });
-            const res = await api('getExercises');
-            cachedExercises = res.data || [];
-            nameInput.value = '';
-            searchResults.innerHTML = '';
-            renderExistingExercises();
-            showToast('Exercise added! ✅');
-        } catch (err) {
-            showToast('Error: ' + err.message, 'error');
-        } finally {
-            setButtonLoading(addBtn, false);
-        }
+        apiFireAndForget('addExercise', { muscleGroup: mg, name });
+        setTimeout(() => refreshCacheQuietly('exercises'), 3000);
     };
 
     renderExistingExercises();
@@ -745,17 +756,14 @@ function renderExistingExercises() {
                 <span>${ex.name}</span>
                 <button class="delete-btn" title="Remove">✕</button>
             `;
-            item.querySelector('.delete-btn').onclick = async () => {
+            item.querySelector('.delete-btn').onclick = () => {
                 if (!confirm(`Remove "${ex.name}"?`)) return;
-                try {
-                    await api('removeExercise', { muscleGroup: ex.muscleGroup, name: ex.name });
-                    const res = await api('getExercises');
-                    cachedExercises = res.data || [];
-                    renderExistingExercises();
-                    showToast('Exercise removed');
-                } catch (err) {
-                    showToast('Error: ' + err.message, 'error');
-                }
+                // Optimistic remove
+                cachedExercises = cachedExercises.filter(e => !(e.muscleGroup === ex.muscleGroup && e.name === ex.name));
+                renderExistingExercises();
+                showToast('Exercise removed');
+                apiFireAndForget('removeExercise', { muscleGroup: ex.muscleGroup, name: ex.name });
+                setTimeout(() => refreshCacheQuietly('exercises'), 3000);
             };
             container.appendChild(item);
         });
@@ -768,25 +776,17 @@ function setupManageLocations() {
     const addBtn = document.getElementById('add-location-btn');
     const input = document.getElementById('add-location-name');
 
-    addBtn.onclick = async () => {
+    addBtn.onclick = () => {
         const name = input.value.trim();
-        if (!name) {
-            showToast('Enter a location name', 'error');
-            return;
-        }
-        setButtonLoading(addBtn, true);
-        try {
-            await api('addLocation', { name });
-            const res = await api('getLocations');
-            cachedLocations = res.data || [];
-            input.value = '';
-            renderLocations();
-            showToast('Location added! 📍');
-        } catch (err) {
-            showToast('Error: ' + err.message, 'error');
-        } finally {
-            setButtonLoading(addBtn, false);
-        }
+        if (!name) { showToast('Enter a location name', 'error'); return; }
+
+        cachedLocations.push({ name });
+        input.value = '';
+        renderLocations();
+        showToast('Location added!');
+
+        apiFireAndForget('addLocation', { name });
+        setTimeout(() => refreshCacheQuietly('locations'), 3000);
     };
 }
 
@@ -806,24 +806,19 @@ function renderLocations() {
             <span>${loc.name}</span>
             <button class="delete-btn" title="Remove">✕</button>
         `;
-        item.querySelector('.delete-btn').onclick = async () => {
+        item.querySelector('.delete-btn').onclick = () => {
             if (!confirm(`Remove "${loc.name}"?`)) return;
-            try {
-                await api('removeLocation', { name: loc.name });
-                const res = await api('getLocations');
-                cachedLocations = res.data || [];
-                renderLocations();
-                showToast('Location removed');
-            } catch (err) {
-                showToast('Error: ' + err.message, 'error');
-            }
+            cachedLocations = cachedLocations.filter(l => l.name !== loc.name);
+            renderLocations();
+            showToast('Location removed');
+            apiFireAndForget('removeLocation', { name: loc.name });
+            setTimeout(() => refreshCacheQuietly('locations'), 3000);
         };
         container.appendChild(item);
     });
 }
 
 function setupEditSets() {
-    // Populate filter
     const filterSelect = document.getElementById('filter-sets-exercise');
     filterSelect.innerHTML = '<option value="">All Exercises</option>';
     const exerciseNames = [...new Set(cachedSets.map(s => s.exercise))].sort();
@@ -842,7 +837,7 @@ function renderEditSets(filterExercise) {
     const container = document.getElementById('sets-list');
     container.innerHTML = '';
 
-    let sets = [...cachedSets].sort((a, b) => b.date.localeCompare(a.date));
+    let sets = [...cachedSets].sort((a, b) => dateKey(b.date).localeCompare(dateKey(a.date)));
     if (filterExercise) {
         sets = sets.filter(s => s.exercise === filterExercise);
     }
@@ -857,7 +852,7 @@ function renderEditSets(filterExercise) {
         item.className = 'edit-item';
         item.innerHTML = `
             <div class="edit-item-primary">${s.exercise} — ${s.weight} kg × ${s.reps} reps</div>
-            <div class="edit-item-secondary">${s.date} • ${s.muscleGroup}</div>
+            <div class="edit-item-secondary">${formatDate(s.date)} · ${s.muscleGroup}</div>
         `;
         item.onclick = () => openEditSetModal(s);
         container.appendChild(item);
@@ -868,23 +863,20 @@ function openEditSetModal(set) {
     const modal = document.getElementById('edit-set-modal');
     modal.style.display = 'flex';
 
-    document.getElementById('edit-set-date').value = set.date;
+    document.getElementById('edit-set-date').value = dateKey(set.date);
     document.getElementById('edit-set-focus').value = set.focus;
     document.getElementById('edit-set-exercise').value = set.exercise;
     document.getElementById('edit-set-weight').value = set.weight;
     document.getElementById('edit-set-reps').value = set.reps;
     document.getElementById('edit-set-row').value = set.row;
 
-    // Populate muscle group select based on focus
     populateEditSetMG(set.focus, set.muscleGroup);
 
     document.getElementById('edit-set-focus').onchange = (e) => {
         populateEditSetMG(e.target.value, '');
     };
 
-    document.getElementById('edit-set-cancel').onclick = () => {
-        modal.style.display = 'none';
-    };
+    document.getElementById('edit-set-cancel').onclick = () => { modal.style.display = 'none'; };
 
     document.getElementById('edit-set-save').onclick = async () => {
         const saveBtn = document.getElementById('edit-set-save');
@@ -903,7 +895,7 @@ function openEditSetModal(set) {
             cachedSets = res.data || [];
             modal.style.display = 'none';
             renderEditSets(document.getElementById('filter-sets-exercise').value);
-            showToast('Set updated! ✅');
+            showToast('Set updated!');
         } catch (err) {
             showToast('Error: ' + err.message, 'error');
         } finally {
@@ -911,22 +903,18 @@ function openEditSetModal(set) {
         }
     };
 
-    document.getElementById('edit-set-delete').onclick = async () => {
+    document.getElementById('edit-set-delete').onclick = () => {
         if (!confirm('Delete this set permanently?')) return;
-        const deleteBtn = document.getElementById('edit-set-delete');
-        setButtonLoading(deleteBtn, true);
-        try {
-            await api('deleteSet', { row: document.getElementById('edit-set-row').value });
-            const res = await api('getSets');
-            cachedSets = res.data || [];
-            modal.style.display = 'none';
-            renderEditSets(document.getElementById('filter-sets-exercise').value);
-            showToast('Set deleted');
-        } catch (err) {
-            showToast('Error: ' + err.message, 'error');
-        } finally {
-            setButtonLoading(deleteBtn, false);
-        }
+        const row = document.getElementById('edit-set-row').value;
+
+        // Optimistic delete
+        cachedSets = cachedSets.filter(s => String(s.row) !== String(row));
+        modal.style.display = 'none';
+        renderEditSets(document.getElementById('filter-sets-exercise').value);
+        showToast('Set deleted');
+
+        apiFireAndForget('deleteSet', { row });
+        setTimeout(() => refreshCacheQuietly('sets'), 3000);
     };
 }
 
@@ -951,7 +939,7 @@ function renderEditSessions() {
     const container = document.getElementById('sessions-list');
     container.innerHTML = '';
 
-    const sessions = [...cachedSessions].sort((a, b) => b.date.localeCompare(a.date));
+    const sessions = [...cachedSessions].sort((a, b) => dateKey(b.date).localeCompare(dateKey(a.date)));
 
     if (sessions.length === 0) {
         container.innerHTML = '<div class="empty-state"><p>No sessions logged yet.</p></div>';
@@ -962,8 +950,8 @@ function renderEditSessions() {
         const item = document.createElement('div');
         item.className = 'edit-item';
         item.innerHTML = `
-            <div class="edit-item-primary">${s.date} — ${s.focus}</div>
-            <div class="edit-item-secondary">${s.muscleGroups} • ${s.duration} min</div>
+            <div class="edit-item-primary">${formatDate(s.date)} — ${s.focus}</div>
+            <div class="edit-item-secondary">${s.muscleGroups} · ${s.duration} min</div>
         `;
         item.onclick = () => openEditSessionModal(s);
         container.appendChild(item);
@@ -974,7 +962,7 @@ function openEditSessionModal(session) {
     const modal = document.getElementById('edit-session-modal');
     modal.style.display = 'flex';
 
-    document.getElementById('edit-session-date').value = session.date;
+    document.getElementById('edit-session-date').value = dateKey(session.date);
     document.getElementById('edit-session-focus').value = session.focus;
     document.getElementById('edit-session-mg').value = session.muscleGroups;
     document.getElementById('edit-session-duration').value = session.duration;
@@ -983,9 +971,7 @@ function openEditSessionModal(session) {
     document.getElementById('edit-session-effort').value = session.effort;
     document.getElementById('edit-session-row').value = session.row;
 
-    document.getElementById('edit-session-cancel').onclick = () => {
-        modal.style.display = 'none';
-    };
+    document.getElementById('edit-session-cancel').onclick = () => { modal.style.display = 'none'; };
 
     document.getElementById('edit-session-save').onclick = async () => {
         const saveBtn = document.getElementById('edit-session-save');
@@ -1005,7 +991,7 @@ function openEditSessionModal(session) {
             cachedSessions = res.data || [];
             modal.style.display = 'none';
             renderEditSessions();
-            showToast('Session updated! ✅');
+            showToast('Session updated!');
         } catch (err) {
             showToast('Error: ' + err.message, 'error');
         } finally {
@@ -1013,22 +999,17 @@ function openEditSessionModal(session) {
         }
     };
 
-    document.getElementById('edit-session-delete').onclick = async () => {
+    document.getElementById('edit-session-delete').onclick = () => {
         if (!confirm('Delete this session permanently?')) return;
-        const deleteBtn = document.getElementById('edit-session-delete');
-        setButtonLoading(deleteBtn, true);
-        try {
-            await api('deleteSession', { row: document.getElementById('edit-session-row').value });
-            const res = await api('getSessions');
-            cachedSessions = res.data || [];
-            modal.style.display = 'none';
-            renderEditSessions();
-            showToast('Session deleted');
-        } catch (err) {
-            showToast('Error: ' + err.message, 'error');
-        } finally {
-            setButtonLoading(deleteBtn, false);
-        }
+        const row = document.getElementById('edit-session-row').value;
+
+        cachedSessions = cachedSessions.filter(s => String(s.row) !== String(row));
+        modal.style.display = 'none';
+        renderEditSessions();
+        showToast('Session deleted');
+
+        apiFireAndForget('deleteSession', { row });
+        setTimeout(() => refreshCacheQuietly('sessions'), 3000);
     };
 }
 
@@ -1036,18 +1017,263 @@ function openEditSessionModal(session) {
 // PAGE: ANALYSIS VIEW
 // ============================================================
 function initAnalysisView() {
+    renderSummaryStats();
+    renderAvgDurationSection();
+    renderCalendar();
+    renderLocationBreakdown();
+    initExerciseProgress();
+}
+
+// ----- Summary Stats -----
+function renderSummaryStats() {
+    document.getElementById('stat-total-sessions').textContent = cachedSessions.length;
+    document.getElementById('stat-total-sets').textContent = cachedSets.length;
+
+    if (cachedSessions.length > 0) {
+        const totalDuration = cachedSessions.reduce((sum, s) => sum + (parseInt(s.duration) || 0), 0);
+        const avg = Math.round(totalDuration / cachedSessions.length);
+        document.getElementById('stat-avg-duration').textContent = avg + 'm';
+    } else {
+        document.getElementById('stat-avg-duration').textContent = '--';
+    }
+}
+
+// ----- Average Duration with Filters -----
+function renderAvgDurationSection() {
+    avgFocusFilter = '';
+    avgLocationFilter = '';
+
+    const focusContainer = document.getElementById('avg-focus-filters');
+    focusContainer.innerHTML = '';
+
+    const allFocusChip = createFilterChip('All', true, () => {
+        avgFocusFilter = '';
+        focusContainer.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+        allFocusChip.classList.add('active');
+        updateAvgDuration();
+    });
+    focusContainer.appendChild(allFocusChip);
+
+    Object.keys(FOCUS_GROUPS).forEach(focus => {
+        const chip = createFilterChip(focus, false, () => {
+            avgFocusFilter = focus;
+            focusContainer.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            updateAvgDuration();
+        });
+        focusContainer.appendChild(chip);
+    });
+
+    const locationContainer = document.getElementById('avg-location-filters');
+    locationContainer.innerHTML = '';
+
+    const uniqueLocations = [...new Set(cachedSessions.map(s => s.location).filter(Boolean))];
+
+    if (uniqueLocations.length > 0) {
+        const allLocChip = createFilterChip('All locations', true, () => {
+            avgLocationFilter = '';
+            locationContainer.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+            allLocChip.classList.add('active');
+            updateAvgDuration();
+        });
+        locationContainer.appendChild(allLocChip);
+
+        uniqueLocations.forEach(loc => {
+            const chip = createFilterChip(loc, false, () => {
+                avgLocationFilter = loc;
+                locationContainer.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+                chip.classList.add('active');
+                updateAvgDuration();
+            });
+            locationContainer.appendChild(chip);
+        });
+    }
+
+    updateAvgDuration();
+}
+
+function updateAvgDuration() {
+    let filtered = [...cachedSessions];
+
+    if (avgFocusFilter) {
+        filtered = filtered.filter(s => s.focus === avgFocusFilter);
+    }
+    if (avgLocationFilter) {
+        filtered = filtered.filter(s => s.location === avgLocationFilter);
+    }
+
+    const valueEl = document.getElementById('avg-duration-value');
+    const countEl = document.getElementById('avg-duration-count');
+
+    if (filtered.length === 0) {
+        valueEl.textContent = '--';
+        countEl.textContent = 'No sessions match filters';
+        return;
+    }
+
+    const total = filtered.reduce((sum, s) => sum + (parseInt(s.duration) || 0), 0);
+    const avg = Math.round(total / filtered.length);
+
+    valueEl.textContent = avg;
+    countEl.textContent = `Based on ${filtered.length} session${filtered.length !== 1 ? 's' : ''}`;
+}
+
+function createFilterChip(label, active, onClick) {
+    const chip = document.createElement('button');
+    chip.className = 'filter-chip' + (active ? ' active' : '');
+    chip.textContent = label;
+    chip.type = 'button';
+    chip.onclick = onClick;
+    return chip;
+}
+
+// ----- Calendar -----
+function renderCalendar() {
+    const grid = document.getElementById('cal-grid');
+    const label = document.getElementById('cal-month-label');
+    const detail = document.getElementById('cal-detail');
+
+    grid.innerHTML = '';
+    detail.style.display = 'none';
+
+    const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'];
+    label.textContent = `${months[calendarMonth]} ${calendarYear}`;
+
+    // Build session lookup by date key
+    const sessionsByDate = {};
+    cachedSessions.forEach(s => {
+        const dk = dateKey(s.date);
+        if (!sessionsByDate[dk]) sessionsByDate[dk] = [];
+        sessionsByDate[dk].push(s);
+    });
+
+    const firstDay = new Date(calendarYear, calendarMonth, 1);
+    let startDayOfWeek = firstDay.getDay();
+    // Convert Sunday=0 to Monday-based (Mon=0, Sun=6)
+    startDayOfWeek = startDayOfWeek === 0 ? 6 : startDayOfWeek - 1;
+
+    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    // Empty cells for offset
+    for (let i = 0; i < startDayOfWeek; i++) {
+        const empty = document.createElement('div');
+        empty.className = 'calendar-day empty';
+        grid.appendChild(empty);
+    }
+
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dk = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const sessions = sessionsByDate[dk] || [];
+        const isToday = dk === todayKey;
+
+        const dayEl = document.createElement('div');
+        dayEl.className = 'calendar-day';
+        if (isToday) dayEl.classList.add('today');
+        if (sessions.length > 0) dayEl.classList.add('has-session');
+        dayEl.textContent = day;
+
+        if (sessions.length > 0) {
+            dayEl.onclick = () => {
+                // Deselect previous
+                grid.querySelectorAll('.calendar-day.selected').forEach(d => d.classList.remove('selected'));
+                dayEl.classList.add('selected');
+
+                detail.style.display = 'block';
+                detail.innerHTML = `
+                    <div class="calendar-day-detail">
+                        <div class="calendar-day-detail-date">${formatDate(dk)}</div>
+                        ${sessions.map(s => `
+                            <div class="calendar-session-item">
+                                <strong>${s.focus}</strong> — ${s.muscleGroups}
+                                <div class="session-meta">
+                                    <span>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                                        ${s.location}
+                                    </span>
+                                    <span>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                        ${s.duration} min
+                                    </span>
+                                    <span>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                                        ${s.people}
+                                    </span>
+                                    <span>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                                        ${s.effort}
+                                    </span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            };
+        }
+
+        grid.appendChild(dayEl);
+    }
+
+    // Calendar navigation
+    document.getElementById('cal-prev').onclick = () => {
+        calendarMonth--;
+        if (calendarMonth < 0) { calendarMonth = 11; calendarYear--; }
+        renderCalendar();
+    };
+
+    document.getElementById('cal-next').onclick = () => {
+        calendarMonth++;
+        if (calendarMonth > 11) { calendarMonth = 0; calendarYear++; }
+        renderCalendar();
+    };
+}
+
+// ----- Location Breakdown -----
+function renderLocationBreakdown() {
+    const container = document.getElementById('location-bars');
+    container.innerHTML = '';
+
+    if (cachedSessions.length === 0) {
+        container.innerHTML = '<div class="empty-state" style="padding:12px 0;"><p>No sessions yet</p></div>';
+        return;
+    }
+
+    const locationCounts = {};
+    cachedSessions.forEach(s => {
+        const loc = s.location || 'Unknown';
+        locationCounts[loc] = (locationCounts[loc] || 0) + 1;
+    });
+
+    const total = cachedSessions.length;
+    const sorted = Object.entries(locationCounts).sort((a, b) => b[1] - a[1]);
+
+    sorted.forEach(([loc, count]) => {
+        const pct = Math.round((count / total) * 100);
+        const row = document.createElement('div');
+        row.className = 'location-bar-row';
+        row.innerHTML = `
+            <span class="location-bar-label">${loc}</span>
+            <div class="location-bar-track">
+                <div class="location-bar-fill" style="width:${pct}%">${count}</div>
+            </div>
+        `;
+        container.appendChild(row);
+    });
+}
+
+// ----- Exercise Progress -----
+function initExerciseProgress() {
     let analysisFocus = '';
     let analysisMG = '';
-    let analysisExercise = '';
 
-    // Focus
     const focusContainer = document.getElementById('analysis-focus-group');
     focusContainer.innerHTML = '';
     Object.keys(FOCUS_GROUPS).forEach(focus => {
         const btn = createPillBtn(focus, () => {
             analysisFocus = focus;
             analysisMG = '';
-            analysisExercise = '';
             focusContainer.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             renderAnalysisMG(focus);
@@ -1073,7 +1299,6 @@ function initAnalysisView() {
         groups.forEach(mg => {
             const btn = createPillBtn(mg, () => {
                 analysisMG = mg;
-                analysisExercise = '';
                 group.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 renderAnalysisExercises(mg);
@@ -1099,7 +1324,6 @@ function initAnalysisView() {
 
         exercises.forEach(ex => {
             const btn = createPillBtn(ex.name, () => {
-                analysisExercise = ex.name;
                 group.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 renderAnalysisChart(ex.name);
@@ -1116,19 +1340,18 @@ function renderAnalysisChart(exerciseName) {
 
     const exerciseSets = cachedSets
         .filter(s => s.exercise === exerciseName)
-        .sort((a, b) => a.date.localeCompare(b.date));
+        .sort((a, b) => dateKey(a.date).localeCompare(dateKey(b.date)));
 
     if (exerciseSets.length === 0) {
         chartContainer.style.display = 'none';
         prompt.style.display = 'block';
-        prompt.innerHTML = '<p>No sets logged for this exercise yet. 📝</p>';
+        prompt.innerHTML = '<p>No sets logged for this exercise yet.</p>';
         return;
     }
 
     prompt.style.display = 'none';
     chartContainer.style.display = 'block';
 
-    // Destroy previous chart
     if (analysisChart) {
         analysisChart.destroy();
         analysisChart = null;
@@ -1136,7 +1359,7 @@ function renderAnalysisChart(exerciseName) {
 
     const ctx = document.getElementById('analysis-chart').getContext('2d');
     const data = exerciseSets.map(s => ({
-        x: s.date,
+        x: dateKey(s.date),
         y: parseFloat(s.weight),
         reps: parseInt(s.reps)
     }));
@@ -1147,15 +1370,15 @@ function renderAnalysisChart(exerciseName) {
             datasets: [{
                 label: 'Weight (kg)',
                 data: data,
-                borderColor: '#00b4d8',
-                backgroundColor: 'rgba(0, 180, 216, 0.1)',
+                borderColor: '#8b5cf6',
+                backgroundColor: 'rgba(139, 92, 246, 0.08)',
                 borderWidth: 2,
-                pointBackgroundColor: '#00b4d8',
-                pointBorderColor: '#00b4d8',
-                pointRadius: 5,
-                pointHoverRadius: 8,
+                pointBackgroundColor: '#8b5cf6',
+                pointBorderColor: '#8b5cf6',
+                pointRadius: 4,
+                pointHoverRadius: 7,
                 fill: true,
-                tension: 0.1
+                tension: 0.2
             }]
         },
         options: {
@@ -1170,51 +1393,32 @@ function renderAnalysisChart(exerciseName) {
                     type: 'time',
                     time: {
                         unit: 'day',
-                        displayFormats: {
-                            day: 'MMM dd'
-                        },
-                        tooltipFormat: 'yyyy-MM-dd'
+                        displayFormats: { day: 'MMM dd' },
+                        tooltipFormat: 'MMM dd, yyyy'
                     },
-                    grid: {
-                        color: 'rgba(255,255,255,0.05)'
-                    },
-                    ticks: {
-                        color: '#888',
-                        maxRotation: 45
-                    }
+                    grid: { color: 'rgba(255,255,255,0.04)' },
+                    ticks: { color: '#52525b', maxRotation: 45, font: { size: 11 } }
                 },
                 y: {
-                    title: {
-                        display: true,
-                        text: 'Weight (kg)',
-                        color: '#888'
-                    },
-                    grid: {
-                        color: 'rgba(255,255,255,0.05)'
-                    },
-                    ticks: {
-                        color: '#888'
-                    }
+                    title: { display: true, text: 'Weight (kg)', color: '#52525b', font: { size: 11 } },
+                    grid: { color: 'rgba(255,255,255,0.04)' },
+                    ticks: { color: '#52525b', font: { size: 11 } }
                 }
             },
             plugins: {
-                legend: {
-                    display: false
-                },
+                legend: { display: false },
                 tooltip: {
-                    backgroundColor: '#1a1a2e',
-                    titleColor: '#e0e0e0',
-                    bodyColor: '#e0e0e0',
-                    borderColor: '#00b4d8',
+                    backgroundColor: '#1c1c24',
+                    titleColor: '#f4f4f5',
+                    bodyColor: '#a1a1aa',
+                    borderColor: '#3f3f46',
                     borderWidth: 1,
                     padding: 12,
+                    cornerRadius: 8,
                     callbacks: {
                         label: function(context) {
                             const point = context.raw;
-                            return [
-                                `Weight: ${point.y} kg`,
-                                `Reps: ${point.reps}`
-                            ];
+                            return [`Weight: ${point.y} kg`, `Reps: ${point.reps}`];
                         }
                     }
                 }
@@ -1228,7 +1432,7 @@ function renderAnalysisChart(exerciseName) {
     const setsAtMax = exerciseSets.filter(s => parseFloat(s.weight) === maxWeight);
     const maxReps = Math.max(...setsAtMax.map(s => parseInt(s.reps)));
     const bestSets = setsAtMax.filter(s => parseInt(s.reps) === maxReps);
-    const bestSet = bestSets.sort((a, b) => b.date.localeCompare(a.date))[0];
+    const bestSet = bestSets.sort((a, b) => dateKey(b.date).localeCompare(dateKey(a.date)))[0];
     const firstDate = exerciseSets[0].date;
     const lastDate = exerciseSets[exerciseSets.length - 1].date;
 
@@ -1243,11 +1447,11 @@ function renderAnalysisChart(exerciseName) {
         </div>
         <div class="stat-row">
             <span class="stat-label">Best set</span>
-            <span class="stat-value">${bestSet.weight} kg × ${bestSet.reps} reps (${bestSet.date})</span>
+            <span class="stat-value">${bestSet.weight} kg × ${bestSet.reps} reps (${formatDate(bestSet.date)})</span>
         </div>
         <div class="stat-row">
             <span class="stat-label">Date range</span>
-            <span class="stat-value">${firstDate} → ${lastDate}</span>
+            <span class="stat-value">${formatDate(firstDate)} → ${formatDate(lastDate)}</span>
         </div>
     `;
 }
