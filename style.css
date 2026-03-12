@@ -1034,14 +1034,15 @@ input[type="date"] { color-scheme: dark; }
 /* ========== Pull to Refresh ========== */
 #pull-indicator {
     position: fixed;
-    top: -60px;
+    top: 0;
     left: 0;
     right: 0;
     z-index: 9998;
     display: flex;
     justify-content: center;
+    padding-top: 12px;
     opacity: 0;
-    transition: opacity 0.2s ease;
+    transform: translateY(-60px);
     pointer-events: none;
 }
 
@@ -1054,27 +1055,26 @@ input[type="date"] { color-scheme: dark; }
     align-items: center;
     gap: 8px;
     padding: 10px 20px;
-    background: var(--surface);
+    background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: 20px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
 
 .pull-arrow {
     color: var(--text-secondary);
     transition: transform 0.2s ease;
+    flex-shrink: 0;
 }
 
 .pull-text {
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--text-secondary);
+    white-space: nowrap;
 }
 
-#pull-indicator.ready .pull-arrow {
-    color: var(--primary);
-}
-
+#pull-indicator.ready .pull-arrow,
 #pull-indicator.ready .pull-text {
     color: var(--primary);
 }

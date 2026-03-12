@@ -44,7 +44,31 @@ function formatDate(dateStr) {
 
 function dateKey(dateStr) {
     if (!dateStr) return '';
-    return String(dateStr).split('T')[0].split(' ')[0];
+    const str = String(dateStr);
+    
+    // If it contains T or Z, it's an ISO timestamp — convert to local date
+    if (str.includes('T') || str.includes('Z')) {
+        const d = new Date(str);
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+    
+    // Handle m/d/yyyy or mm/dd/yyyy (US format from Sheets)
+    const slashMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (slashMatch) {
+        const m = slashMatch[1].padStart(2, '0');
+        const d = slashMatch[2].padStart(2, '0');
+        return `${slashMatch[3]}-${m}-${d}`;
+    }
+    
+    // Already yyyy-mm-dd
+    if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+        return str.substring(0, 10);
+    }
+    
+    return str;
 }
 
 // ===== API Helper =====
@@ -1485,14 +1509,14 @@ document.addEventListener('click', (e) => {
     let touchStartY = 0;
     let touchCurrentY = 0;
     let isPulling = false;
-    const threshold = 80;
+    let isRefreshing = false;
+    const threshold = 100;
 
-    // Create pull indicator element
     const indicator = document.createElement('div');
     indicator.id = 'pull-indicator';
     indicator.innerHTML = `
         <div class="pull-indicator-content">
-            <svg class="pull-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg class="pull-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="6 9 12 15 18 9"/>
             </svg>
             <span class="pull-text">Pull to refresh</span>
@@ -1501,23 +1525,25 @@ document.addEventListener('click', (e) => {
     document.body.prepend(indicator);
 
     document.addEventListener('touchstart', (e) => {
-        if (window.scrollY === 0) {
+        if (isRefreshing) return;
+        if (window.scrollY <= 0) {
             touchStartY = e.touches[0].clientY;
+            touchCurrentY = touchStartY;
             isPulling = true;
         }
     }, { passive: true });
 
     document.addEventListener('touchmove', (e) => {
-        if (!isPulling) return;
+        if (!isPulling || isRefreshing) return;
         touchCurrentY = e.touches[0].clientY;
         const pullDistance = touchCurrentY - touchStartY;
 
-        if (pullDistance > 0 && window.scrollY === 0) {
+        if (pullDistance > 10 && window.scrollY <= 0) {
             const progress = Math.min(pullDistance / threshold, 1);
-            const translateY = Math.min(pullDistance * 0.4, 60);
+            const translateY = Math.min(pullDistance * 0.5, 80) - 60;
 
             indicator.style.transform = `translateY(${translateY}px)`;
-            indicator.style.opacity = progress;
+            indicator.style.opacity = String(progress);
             indicator.classList.add('visible');
 
             const arrow = indicator.querySelector('.pull-arrow');
@@ -1532,20 +1558,25 @@ document.addEventListener('click', (e) => {
                 text.textContent = 'Pull to refresh';
                 indicator.classList.remove('ready');
             }
+        } else if (pullDistance <= 0) {
+            resetIndicator();
+            isPulling = false;
         }
     }, { passive: true });
 
     document.addEventListener('touchend', () => {
-        if (!isPulling) return;
+        if (!isPulling || isRefreshing) return;
         const pullDistance = touchCurrentY - touchStartY;
 
-        if (pullDistance >= threshold && window.scrollY === 0) {
-            // Trigger refresh
+        if (pullDistance >= threshold && window.scrollY <= 0) {
+            isRefreshing = true;
             indicator.classList.add('refreshing');
             indicator.querySelector('.pull-text').textContent = 'Refreshing...';
-            indicator.style.transform = 'translateY(50px)';
+            indicator.style.transform = 'translateY(20px)';
+            indicator.style.opacity = '1';
 
             refreshAllData().finally(() => {
+                isRefreshing = false;
                 resetIndicator();
             });
         } else {
@@ -1558,9 +1589,13 @@ document.addEventListener('click', (e) => {
     });
 
     function resetIndicator() {
-        indicator.style.transform = 'translateY(0)';
+        indicator.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
+        indicator.style.transform = 'translateY(-60px)';
         indicator.style.opacity = '0';
         indicator.classList.remove('visible', 'ready', 'refreshing');
+        setTimeout(() => {
+            indicator.style.transition = '';
+        }, 300);
     }
 })();
 
@@ -1580,7 +1615,6 @@ async function refreshAllData() {
 
         showToast('Data synced');
 
-        // Re-render current view
         if (currentView === 'settings') initSettingsView();
         else if (currentView === 'analysis') initAnalysisView();
     } catch (err) {
