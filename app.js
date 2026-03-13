@@ -2,7 +2,7 @@
 // Gym Progressive Overload Tracker — Application Logic
 // ============================================================
 
-const APP_VERSION = 'v3.0';
+const APP_VERSION = 'v3.2';
 
 // ===== Constants =====
 const FOCUS_GROUPS = {
@@ -747,27 +747,29 @@ function openEditSetModal(set) {
     document.getElementById('edit-set-focus').onchange = (e) => populateEditSetMG(e.target.value, '');
     document.getElementById('edit-set-cancel').onclick = () => { modal.style.display = 'none'; };
 
-    document.getElementById('edit-set-save').onclick = async () => {
-        const saveBtn = document.getElementById('edit-set-save');
-        setButtonLoading(saveBtn, true);
-        try {
-            await api('updateSet', {
-                row: document.getElementById('edit-set-row').value,
-                date: document.getElementById('edit-set-date').value,
-                focus: document.getElementById('edit-set-focus').value,
-                muscleGroup: document.getElementById('edit-set-mg').value,
-                exercise: document.getElementById('edit-set-exercise').value,
-                weight: document.getElementById('edit-set-weight').value,
-                reps: document.getElementById('edit-set-reps').value
-            });
-            const res = await api('getSets');
-            cachedSets = res.data || [];
-            modal.style.display = 'none';
-            setupEditSets();
-            showToast('Set updated!');
-        } catch (err) {
-            showToast('Error: ' + err.message, 'error');
-        } finally { setButtonLoading(saveBtn, false); }
+    document.getElementById('edit-set-save').onclick = () => {
+        const row = document.getElementById('edit-set-row').value;
+        const updated = {
+            date: document.getElementById('edit-set-date').value,
+            focus: document.getElementById('edit-set-focus').value,
+            muscleGroup: document.getElementById('edit-set-mg').value,
+            exercise: document.getElementById('edit-set-exercise').value,
+            weight: document.getElementById('edit-set-weight').value,
+            reps: document.getElementById('edit-set-reps').value
+        };
+
+        // Optimistic update
+        const idx = cachedSets.findIndex(s => String(s.row) === String(row));
+        if (idx !== -1) {
+            cachedSets[idx] = { ...cachedSets[idx], ...updated };
+        }
+
+        modal.style.display = 'none';
+        setupEditSets();
+        showToast('Set updated!');
+
+        apiFireAndForget('updateSet', { row, ...updated });
+        setTimeout(() => refreshCacheQuietly('sets'), 3000);
     };
 
     document.getElementById('edit-set-delete').onclick = () => {
@@ -775,7 +777,8 @@ function openEditSetModal(set) {
         const row = document.getElementById('edit-set-row').value;
         cachedSets = cachedSets.filter(s => String(s.row) !== String(row));
         modal.style.display = 'none';
-        setupEditSets(); showToast('Set deleted');
+        setupEditSets();
+        showToast('Set deleted');
         apiFireAndForget('deleteSet', { row });
         setTimeout(() => refreshCacheQuietly('sets'), 3000);
     };
@@ -854,27 +857,30 @@ function openEditSessionModal(session) {
     document.getElementById('edit-session-row').value = session.row;
     document.getElementById('edit-session-cancel').onclick = () => { modal.style.display = 'none'; };
 
-    document.getElementById('edit-session-save').onclick = async () => {
-        const saveBtn = document.getElementById('edit-session-save');
-        setButtonLoading(saveBtn, true);
-        try {
-            await api('updateSession', {
-                row: document.getElementById('edit-session-row').value,
-                date: document.getElementById('edit-session-date').value,
-                focus: document.getElementById('edit-session-focus').value,
-                muscleGroups: document.getElementById('edit-session-mg').value,
-                duration: document.getElementById('edit-session-duration').value,
-                location: document.getElementById('edit-session-location').value,
-                people: document.getElementById('edit-session-people').value,
-                effort: document.getElementById('edit-session-effort').value
-            });
-            const res = await api('getSessions');
-            cachedSessions = res.data || [];
-            modal.style.display = 'none';
-            setupEditSessions(); showToast('Session updated!');
-        } catch (err) {
-            showToast('Error: ' + err.message, 'error');
-        } finally { setButtonLoading(saveBtn, false); }
+    document.getElementById('edit-session-save').onclick = () => {
+        const row = document.getElementById('edit-session-row').value;
+        const updated = {
+            date: document.getElementById('edit-session-date').value,
+            focus: document.getElementById('edit-session-focus').value,
+            muscleGroups: document.getElementById('edit-session-mg').value,
+            duration: document.getElementById('edit-session-duration').value,
+            location: document.getElementById('edit-session-location').value,
+            people: document.getElementById('edit-session-people').value,
+            effort: document.getElementById('edit-session-effort').value
+        };
+
+        // Optimistic update
+        const idx = cachedSessions.findIndex(s => String(s.row) === String(row));
+        if (idx !== -1) {
+            cachedSessions[idx] = { ...cachedSessions[idx], ...updated };
+        }
+
+        modal.style.display = 'none';
+        setupEditSessions();
+        showToast('Session updated!');
+
+        apiFireAndForget('updateSession', { row, ...updated });
+        setTimeout(() => refreshCacheQuietly('sessions'), 3000);
     };
 
     document.getElementById('edit-session-delete').onclick = () => {
@@ -882,7 +888,8 @@ function openEditSessionModal(session) {
         const row = document.getElementById('edit-session-row').value;
         cachedSessions = cachedSessions.filter(s => String(s.row) !== String(row));
         modal.style.display = 'none';
-        setupEditSessions(); showToast('Session deleted');
+        setupEditSessions();
+        showToast('Session deleted');
         apiFireAndForget('deleteSession', { row });
         setTimeout(() => refreshCacheQuietly('sessions'), 3000);
     };
