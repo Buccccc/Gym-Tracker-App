@@ -1101,3 +1101,81 @@ input[type="date"] { color-scheme: dark; }
     letter-spacing: 0.03em;
     pointer-events: none;
 }
+
+/* ========== Calendar Sets Section ========== */
+.calendar-sets-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    margin-top: 8px;
+    border-top: 1px solid var(--border);
+    cursor: pointer;
+    color: var(--primary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    -webkit-tap-highlight-color: transparent;
+    transition: color var(--transition);
+}
+
+.calendar-sets-toggle:hover {
+    color: var(--primary-hover);
+}
+
+.calendar-sets-toggle-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.calendar-sets-chevron {
+    transition: transform 0.2s ease;
+}
+
+.calendar-sets-toggle.expanded .calendar-sets-chevron {
+    transform: rotate(180deg);
+}
+
+.calendar-sets-content {
+    animation: slideDown 0.2s ease;
+    padding-top: 4px;
+}
+
+.calendar-exercise-group {
+    margin-bottom: 10px;
+}
+
+.calendar-exercise-group:last-child {
+    margin-bottom: 0;
+}
+
+.calendar-exercise-name {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+}
+
+.calendar-set-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    background: var(--bg);
+    border-radius: 4px;
+    margin-bottom: 3px;
+    border: 1px solid var(--border);
+}
+
+.calendar-set-detail {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.calendar-set-mg {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}

@@ -2,7 +2,7 @@
 // Gym Progressive Overload Tracker — Application Logic
 // ============================================================
 
-const APP_VERSION = 'v3.2';
+const APP_VERSION = 'v3.3';
 
 // ===== Constants =====
 const FOCUS_GROUPS = {
@@ -1019,6 +1019,33 @@ function renderCalendar() {
                 grid.querySelectorAll('.calendar-day.selected').forEach(d => d.classList.remove('selected'));
                 dayEl.classList.add('selected');
                 detail.style.display = 'block';
+
+                // Get sets for this date
+                const daySets = cachedSets.filter(s => dateKey(s.date) === dk);
+
+                // Group sets by exercise
+                let setsHTML = '';
+                if (daySets.length > 0) {
+                    const grouped = {};
+                    daySets.forEach(s => {
+                        if (!grouped[s.exercise]) grouped[s.exercise] = [];
+                        grouped[s.exercise].push(s);
+                    });
+                    setsHTML = Object.entries(grouped).map(([exercise, sets]) => `
+                        <div class="calendar-exercise-group">
+                            <div class="calendar-exercise-name">${exercise}</div>
+                            ${sets.map(s => `
+                                <div class="calendar-set-row">
+                                    <span class="calendar-set-detail">${s.weight} kg × ${s.reps} reps</span>
+                                    <span class="calendar-set-mg">${s.muscleGroup}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `).join('');
+                } else {
+                    setsHTML = '<p style="font-size:0.8rem; color:var(--text-muted); padding:8px 0;">No sets logged this day</p>';
+                }
+
                 detail.innerHTML = `
                     <div class="calendar-day-detail">
                         <div class="calendar-day-detail-date">${formatDate(dk)}</div>
@@ -1031,8 +1058,33 @@ function renderCalendar() {
                                     <span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> ${s.people}</span>
                                     <span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> ${s.effort}</span>
                                 </div>
-                            </div>`).join('')}
-                    </div>`;
+                            </div>
+                        `).join('')}
+                        <div class="calendar-sets-toggle" id="cal-sets-toggle">
+                            <div class="calendar-sets-toggle-left">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.4 14.4 9.6 9.6"/><path d="M18.657 21.485a2 2 0 1 1-2.829-2.828l-1.767 1.768a2 2 0 1 1-2.829-2.829l6.364-6.364a2 2 0 1 1 2.829 2.829l-1.768 1.767a2 2 0 1 1 2.828 2.829z"/><path d="m21.5 21.5-1.4-1.4"/><path d="M3.9 3.9 2.5 2.5"/><path d="M6.404 12.768a2 2 0 1 1-2.829-2.829l1.768-1.767a2 2 0 1 1-2.828-2.829l2.828-2.828a2 2 0 1 1 2.829 2.828l1.767-1.768a2 2 0 1 1 2.829 2.829z"/></svg>
+                                <span>${daySets.length} set${daySets.length !== 1 ? 's' : ''} logged</span>
+                            </div>
+                            <svg class="calendar-sets-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                        </div>
+                        <div class="calendar-sets-content" id="cal-sets-content" style="display:none;">
+                            ${setsHTML}
+                        </div>
+                    </div>
+                `;
+
+                document.getElementById('cal-sets-toggle').onclick = (e) => {
+                    e.stopPropagation();
+                    const content = document.getElementById('cal-sets-content');
+                    const toggle = document.getElementById('cal-sets-toggle');
+                    if (content.style.display === 'none') {
+                        content.style.display = 'block';
+                        toggle.classList.add('expanded');
+                    } else {
+                        content.style.display = 'none';
+                        toggle.classList.remove('expanded');
+                    }
+                };
             };
         }
         grid.appendChild(dayEl);
